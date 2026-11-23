@@ -47,6 +47,9 @@ jobs:
           DESCRIPTION: ${{ steps.info.outputs.description }}
           URL: ${{ steps.info.outputs.url }}
         run: |
+          # the info helper returns YAML values with their quotes ("0.3.0"); strip them
+          IMAGE="${IMAGE//\"/}"; VERSION="${VERSION//\"/}"; NAME="${NAME//\"/}"
+          DESCRIPTION="${DESCRIPTION//\"/}"; URL="${URL//\"/}"
           {
             echo "image_name=${IMAGE##*/}"
             echo "registry_prefix=${IMAGE%/*}"

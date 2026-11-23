@@ -51,6 +51,7 @@ jobs:
           # the info helper returns YAML values with their quotes ("0.3.0"); strip them
           IMAGE="${IMAGE//\"/}"; VERSION="${VERSION//\"/}"; NAME="${NAME//\"/}"
           DESCRIPTION="${DESCRIPTION//\"/}"; URL="${URL//\"/}"
+          IMAGE="${IMAGE//\{arch\}-/}"   # config.yaml uses {arch}-name; the matrix step adds the arch itself
           {
             echo "image_name=${IMAGE##*/}"
             echo "registry_prefix=${IMAGE%/*}"

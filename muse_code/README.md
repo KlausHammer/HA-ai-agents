@@ -15,6 +15,7 @@ Claude Code, Codex, Gemini CLI and Muse Code in a Home Assistant sidebar panel. 
 - Conversations survive closing the panel and restarting the app.
 - Install, sign in and update each agent from the panel. Agents are stored in the app's own storage.
 - Shared house rules and Home Assistant skills for every agent, plus the `ha-api` and `ha-ws` tools.
+- The agents check their own work: `ha-screenshot` lets them see a dashboard as you do (and reports failed cards), and they read back states, traces and logs before they report.
 - Files tab for images, drawings and PDFs that you and the agents share.
 - Automatic compaction at a token limit and after a quiet period, so long conversations stay cheap.
 - Admin-only panel, no open ports.

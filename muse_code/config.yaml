@@ -1,8 +1,8 @@
 name: AI Agents
-version: "0.3.0"
+version: "0.3.1"
 slug: muse_code
 url: "https://github.com/KlausHammer/HA-ai-agents/tree/main/muse_code"
-image: "ghcr.io/klaushammer/ha-ai-agents"
+image: "ghcr.io/klaushammer/{arch}-ha-ai-agents"
 description: "Claude Code, Codex, Gemini CLI and Muse Code in a sidebar terminal, with full admin access to Home Assistant. By default the agents act without asking for confirmation."
 arch:
   - amd64

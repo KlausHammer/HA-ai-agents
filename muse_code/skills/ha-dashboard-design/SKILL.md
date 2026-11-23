@@ -10,7 +10,7 @@ description: Design and build good-looking, usable Home Assistant dashboards (Lo
 2. **Save the old config** to `/share/ai_agents_backups/dashboards/<path>-<timestamp>.json` before you change it.
 3. **Sketch the structure** in your reply when the change is big (views, sections, what goes where), and agree it with the user.
 4. **Write the new config** and save it with `ha-ws '{"type":"lovelace/config/save","url_path":"<path>","config":{...}}'`. Pipe large JSON through `ha-ws -`. A dashboard in YAML mode is edited in its YAML file instead.
-5. **Verify.** Read the config back and check that every entity id exists (`ha-ws '{"type":"config/entity_registry/list"}'` or `ha-api GET /api/states`). Then ask the user to look at it on both a phone and a desktop.
+5. **See it yourself.** Read the config back and check that every entity id exists (`ha-api GET /api/states`). Then run `ha-screenshot /<path>/<view>` and `ha-screenshot /<path>/<view> --mobile`, **open both PNGs and look at them**, and fix card errors, warnings and anything that looks wrong. Repeat until it looks right. Then tell the user the screenshots are in the Files tab (see the `ha-verify` skill).
 
 ## Layout principles
 - **View type.** Use the **sections** view type (`type: sections`, `max_columns: 3` or `4`) for most views. It reflows on phones and keeps a consistent grid. Use `panel` for one big card, such as a map or floor plan. Use `masonry` only for legacy configs.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+- The agents can check their own work:
+  - New `ha-screenshot` tool: opens any Home Assistant page in a headless browser (Chromium, now part of the image) and saves a PNG in the Files tab.
+  - It reports failed cards, unavailable entities and script errors. Options: phone size, full page, dark or light.
+  - It needs a long-lived token in Settings.
+  - New `ha-verify` skill, and a house rule that tells every agent to check its result before it reports back: screenshots for dashboards (and to look at the image), and states, the config check, automation traces and logs for everything else.
+- The published images are named per architecture (`ghcr.io/klaushammer/{arch}-ha-ai-agents`).
+
 ## 0.3.0
 - Ready for a public repository: icon and logo, and a description and documentation that list every permission, what is sent to the AI vendors, and that the agents act without confirmation by default.
 - A notice about YOLO mode and full access is shown the first time the panel is opened.

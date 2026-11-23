@@ -182,7 +182,7 @@ main { flex: 1; position: relative; min-height: 0; background: var(--term-bg); }
   <label for="s-ha_token">Full-access token (long-lived, owner/admin) <span class="st" id="st-ha_token"></span></label>
   <input id="s-ha_token" type="password" autocomplete="off" placeholder="Paste a new token to replace it">
   <small>When set, ha-api and ha-ws use it instead of the app's own Supervisor token, so the agents act as that user.</small>
-  <small>Only needed for the few things the Supervisor token may not do. The agents can read this token, like every other secret in the app.</small>
+  <small>Needed for screenshots (ha-screenshot, so the agents can see what they built) and for the few things the Supervisor token may not do. Create it under your profile → Security → Long-lived access tokens. The agents can read this token, like every other secret in the app.</small>
   <label for="s-ha_url">Home Assistant address (for the token)</label><input id="s-ha_url" autocomplete="off">
   <h3>API keys</h3>
   <div id="s-keys"></div>

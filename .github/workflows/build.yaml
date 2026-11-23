@@ -1,4 +1,5 @@
-# Builds the AI Agents app image for amd64 and aarch64 and publishes it to GitHub Container Registry.
+# Builds the AI Agents app image for amd64 and aarch64 and publishes it to GitHub Container Registry as
+# ghcr.io/<owner>/{arch}-ha-ai-agents (config.yaml uses the {arch} form, so no multi-arch manifest is needed).
 # A version that is already published is not overwritten: bump `version` in muse_code/config.yaml to release.
 name: Build app
 
@@ -101,24 +102,3 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           skip-existing: ${{ needs.prepare.outputs.version }}
           version: ${{ needs.prepare.outputs.version }}
-
-  manifest:
-    name: Publish multi-arch manifest
-    needs: [prepare, build]
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      packages: write
-    steps:
-      - name: Publish multi-arch manifest
-        uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.09.0
-        with:
-          architectures: ${{ needs.prepare.outputs.architectures }}
-          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
-          image-name: ${{ needs.prepare.outputs.image_name }}
-          image-tags: |
-            ${{ needs.prepare.outputs.version }}
-            latest
-          registry-prefix: ${{ needs.prepare.outputs.registry_prefix }}
-          skip-existing: ${{ needs.prepare.outputs.version }}

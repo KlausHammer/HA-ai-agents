@@ -652,7 +652,7 @@ def tab_info(tid):
     t = tabs[tid]
     if tid == 'shell':
         return {'id': 'shell', 'name': 'Shell', 'by': '', 'installed': True, 'version': 'bash', 'running': t.running(),
-                'label': t.label, 'login': False, 'started': t.started_once, 'hint': 'A root shell in /homeassistant. ha-api and ha-ws talk to Home Assistant.'}
+                'label': t.label, 'login': False, 'started': t.started_once, 'hint': 'A root shell in /homeassistant. ha-api and ha-ws talk to Home Assistant, ha-screenshot shows a page as an image.'}
     a = AGENTS[tid]
     v = version(tid)
     return {'id': tid, 'name': a['name'], 'by': a['by'], 'installed': bool(v), 'version': v, 'running': t.running(),

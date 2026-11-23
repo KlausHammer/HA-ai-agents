@@ -73,8 +73,13 @@ When the app starts, every agent gets the same house rules and Home Assistant sk
   - The rules are written to `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` and `~/.config/muse/AGENTS.md` inside `/data`. Delete the first line of one of those files and the app stops overwriting it.
 - **Skills:**
   - `home-assistant-best-practices`, from [homeassistant-ai/skills](https://github.com/homeassistant-ai/skills) (MIT).
-  - `ha-dashboard-design`, `ha-api-recipes`, `ha-troubleshooting` and `ha-reporting`.
+  - `ha-dashboard-design`, `ha-api-recipes`, `ha-troubleshooting`, `ha-verify` and `ha-reporting`.
 - **Tools:** `ha-api` (REST API of Core and the Supervisor) and `ha-ws` (WebSocket API). They use the app's Supervisor token. If you set your own long-lived token in Settings, they use that one and the agents act as that user.
+- **Checking their own work:** the rules and the `ha-verify` skill tell every agent to check its result before it reports back: states, the config check, automation traces and logs.
+  - For dashboards they use `ha-screenshot`. It opens the page in a headless browser inside the app and saves a picture, which the agent then looks at. It also reports failed cards, unavailable entities and script errors.
+  - Screenshots appear in the **Files** tab, so you see what the agent saw.
+  - `ha-screenshot` needs a long-lived access token: create one under your profile → Security → Long-lived access tokens, and paste it in Settings → Full-access token.
+  - Claude Code, Gemini CLI and Codex can look at images. Check your Muse Code version for image support.
 
 ## Options
 | Option | Default | Meaning |

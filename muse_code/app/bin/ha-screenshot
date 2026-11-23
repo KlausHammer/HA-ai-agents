@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""ha-screenshot [PATH] [options]  -- open a Home Assistant page in a headless browser, save a PNG and
+report what went wrong on the page (cards that failed, entities that are not available, script errors).
+
+Use it to check your own work: after you change a dashboard, take a screenshot, then LOOK at the image
+with your image/file reading tool, and fix what is wrong.
+
+  ha-screenshot /lovelace/0                     default dashboard, first view
+  ha-screenshot /dashboard-energy/overview --mobile
+  ha-screenshot /lovelace/climate --full --dark   whole view, dark theme
+  ha-screenshot /config/automation/dashboard     any page of the Home Assistant UI
+
+Options:
+  --out FILE      where to save (default /share/ai_agents_files/screenshot-<page>-<time>.png,
+                  which the user sees in the app's Files tab)
+  --mobile        phone size (390x844, 2x); default is desktop 1366x900
+  --size WxH      own viewport size, e.g. 1920x1080
+  --full          capture the whole page height instead of only the first screen
+  --dark/--light  colour scheme (default: the user's theme setting)
+  --sidebar       keep the sidebar (hidden by default)
+  --wait SECONDS  extra time for cards and images to load (default 4)
+  --json          print the report as JSON
+
+Needs a long-lived access token: set it in the app's Settings (gear icon) -> Full-access token.
+Exit code 0 = page rendered without card errors, 1 = errors found on the page, 2 = could not take it.
+"""
+import asyncio, glob, json, os, re, shutil, subprocess, sys, tempfile, time, urllib.request
+
+try:
+    import websockets
+except ImportError:
+    sys.exit('python3-websockets is missing')
+
+HOME = os.environ.get('HOME', '/data')
+
+
+def fail(msg):
+    print('ha-screenshot: ' + msg, file=sys.stderr)
+    sys.exit(2)
+
+
+def token():
+    t = os.environ.get('HA_USER_TOKEN', '').strip()
+    if not t:  # set on the settings page after this agent started
+        try:
+            with open(os.path.join(HOME, 'ha_user_token'), encoding='utf8') as f:
+                t = f.read().strip()
+        except OSError:
+            pass
+    return t
+
+
+def base_url():
+    u = os.environ.get('HA_DIRECT_URL', '').strip()
+    if not u:
+        try:
+            with open(os.path.join(HOME, 'settings.json'), encoding='utf8') as f:
+                u = (json.load(f).get('ha_url') or '').strip()
+        except (OSError, ValueError):
+            pass
+    if not u and os.environ.get('SUPERVISOR_TOKEN'):
+        try:
+            req = urllib.request.Request('http://supervisor/core/info',
+                                         headers={'Authorization': 'Bearer ' + os.environ['SUPERVISOR_TOKEN']})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                d = json.load(r).get('data') or {}
+            u = f"{'https' if d.get('ssl') else 'http'}://homeassistant:{int(d.get('port') or 8123)}"
+        except Exception:
+            pass
+    return (u or 'http://homeassistant:8123').rstrip('/')
+
+
+def browser():
+    for c in (os.environ.get('CHROME'), 'chromium', 'chromium-browser', 'google-chrome', 'chrome'):
+        if c and (shutil.which(c) or os.path.isfile(c)):
+            return shutil.which(c) or c
+    fail('no Chromium found in this app (update the app to version 0.3.1 or newer)')
+
+
+# Runs in the page: finds failed cards and warnings, also inside shadow roots
+REPORT_JS = r"""(() => {
+  const errors = [], warnings = [];
+  const text = el => ((el.shadowRoot ? el.shadowRoot.textContent : '') + ' ' + el.textContent).replace(/\s+/g, ' ').trim().slice(0, 240);
+  const walk = root => {
+    for (const el of root.querySelectorAll('*')) {
+      const t = el.tagName;
+      if (t === 'HUI-ERROR-CARD') errors.push(text(el) || 'card error');
+      else if (t === 'HUI-WARNING' || t === 'HUI-WARNING-ELEMENT') warnings.push(text(el) || el.getAttribute('label') || 'warning');
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(document);
+  const h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+  return { href: location.href, title: document.title, errors, warnings, height: h,
+           login: location.pathname.startsWith('/auth/') || !!document.querySelector('ha-authorize') };
+})()"""
+
+
+class CDP:
+    def __init__(self, ws):
+        self.ws, self.n, self.events = ws, 0, []
+
+    async def call(self, method, params=None, timeout=30):
+        self.n += 1
+        i = self.n
+        await self.ws.send(json.dumps({'id': i, 'method': method, 'params': params or {}}))
+        end = time.monotonic() + timeout
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                raise TimeoutError(method)
+            m = json.loads(await asyncio.wait_for(self.ws.recv(), left))
+            if m.get('id') == i:
+                if 'error' in m:
+                    raise RuntimeError(f"{method}: {m['error'].get('message')}")
+                return m.get('result', {})
+            self.events.append(m)
+
+    async def wait_event(self, name, timeout):
+        end = time.monotonic() + timeout
+        while True:
+            for k, m in enumerate(self.events):
+                if m.get('method') == name:
+                    del self.events[k]
+                    return m
+            left = end - time.monotonic()
+            if left <= 0:
+                return None
+            try:
+                self.events.append(json.loads(await asyncio.wait_for(self.ws.recv(), left)))
+            except asyncio.TimeoutError:
+                return None
+
+    async def drain(self, seconds):
+        end = time.monotonic() + seconds
+        while (left := end - time.monotonic()) > 0:
+            try:
+                self.events.append(json.loads(await asyncio.wait_for(self.ws.recv(), left)))
+            except asyncio.TimeoutError:
+                break
+
+
+def console_errors(events):
+    out = []
+    for m in events:
+        p = m.get('params', {})
+        if m.get('method') == 'Runtime.exceptionThrown':
+            d = p.get('exceptionDetails', {})
+            out.append((d.get('exception', {}).get('description') or d.get('text') or 'exception').splitlines()[0][:240])
+        elif m.get('method') == 'Runtime.consoleAPICalled' and p.get('type') == 'error':
+            out.append(' '.join(str(a.get('value', a.get('description', ''))) for a in p.get('args', []))[:240])
+        elif m.get('method') == 'Log.entryAdded' and p.get('entry', {}).get('level') == 'error':
+            e = p['entry']
+            if not (e.get('url') or '').endswith('favicon.ico'):
+                out.append((e.get('text', '') + (' ' + e['url'] if e.get('url') else ''))[:240])
+    seen, uniq = set(), []
+    for e in out:
+        if e and e not in seen:
+            seen.add(e)
+            uniq.append(e)
+    return uniq
+
+
+async def shoot(a, tok, base, out):
+    url = base + (a['path'] if a['path'].startswith('/') else '/' + a['path'])
+    prof = tempfile.mkdtemp(prefix='ha-shot-')
+    exe = browser()
+    proc = subprocess.Popen([exe, '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+                             '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', '--mute-audio',
+                             '--ignore-certificate-errors', f'--user-data-dir={prof}', '--remote-debugging-port=0',
+                             'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        port_file, port = os.path.join(prof, 'DevToolsActivePort'), None
+        for _ in range(150):
+            if os.path.exists(port_file):
+                lines = open(port_file).read().split()
+                if lines:
+                    port = lines[0]
+                    break
+            if proc.poll() is not None:
+                fail(f'the browser stopped right away (exit code {proc.returncode})')
+            await asyncio.sleep(0.1)
+        if not port:
+            fail('the browser did not start in time')
+        pages = []
+        for _ in range(50):
+            with urllib.request.urlopen(f'http://127.0.0.1:{port}/json/list', timeout=5) as r:
+                pages = [p for p in json.load(r) if p.get('type') == 'page']
+            if pages:
+                break
+            await asyncio.sleep(0.1)
+        if not pages:
+            fail('no browser page to use')
+        async with websockets.connect(pages[0]['webSocketDebuggerUrl'], max_size=None) as ws:
+            c = CDP(ws)
+            for m in ('Page.enable', 'Runtime.enable', 'Log.enable'):
+                await c.call(m)
+            w, h, scale, mobile = a['width'], a['height'], a['scale'], a['mobile']
+            await c.call('Emulation.setDeviceMetricsOverride', {'width': w, 'height': h, 'deviceScaleFactor': scale, 'mobile': mobile})
+            if a['scheme']:
+                await c.call('Emulation.setEmulatedMedia', {'features': [{'name': 'prefers-color-scheme', 'value': a['scheme']}]})
+            # The frontend reads its login from localStorage; a long-lived token works as the access token
+            tokens = {'access_token': tok, 'token_type': 'Bearer', 'expires_in': 1800, 'hassUrl': base,
+                      'clientId': base + '/', 'expires': 4102444800000, 'refresh_token': ''}
+            boot = f"""try {{
+              if (location.origin === {json.dumps(base)}) {{
+                localStorage.setItem('hassTokens', {json.dumps(json.dumps(tokens))});
+                {"" if a['sidebar'] else "localStorage.setItem('dockedSidebar', JSON.stringify('always_hidden'));"}
+              }}
+            }} catch (e) {{}}"""
+            await c.call('Page.addScriptToEvaluateOnNewDocument', {'source': boot})
+            nav = await c.call('Page.navigate', {'url': url})
+            if nav.get('errorText'):
+                fail(f"could not open {url}: {nav['errorText']}")
+            await c.wait_event('Page.loadEventFired', 30)
+            await c.drain(a['wait'])
+            rep = (await c.call('Runtime.evaluate', {'expression': REPORT_JS, 'returnByValue': True}))['result'].get('value') or {}
+            if a['full'] and rep.get('height', 0) > h:
+                await c.call('Emulation.setDeviceMetricsOverride', {'width': w, 'height': min(int(rep['height']), 12000),
+                                                                     'deviceScaleFactor': scale, 'mobile': mobile})
+                await c.drain(1.5)
+                rep = (await c.call('Runtime.evaluate', {'expression': REPORT_JS, 'returnByValue': True}))['result'].get('value') or rep
+            shot = await c.call('Page.captureScreenshot', {'format': 'png'}, timeout=60)
+            import base64
+            os.makedirs(os.path.dirname(out) or '.', exist_ok=True)
+            with open(out, 'wb') as f:
+                f.write(base64.b64decode(shot['data']))
+            rep['console_errors'] = console_errors(c.events)
+            return rep
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        shutil.rmtree(prof, ignore_errors=True)  # the profile holds the token
+
+
+def parse(argv):
+    a = {'path': '/lovelace/0', 'out': '', 'width': 1366, 'height': 900, 'scale': 1, 'mobile': False, 'full': False,
+         'scheme': '', 'sidebar': False, 'wait': 4.0, 'json': False}
+    it = iter(argv)
+    for x in it:
+        if x in ('-h', '--help'):
+            print(__doc__)
+            sys.exit(0)
+        elif x == '--out':
+            a['out'] = next(it, '')
+        elif x == '--mobile':
+            a.update(width=390, height=844, scale=2, mobile=True)
+        elif x == '--size':
+            m = re.fullmatch(r'(\d+)x(\d+)', next(it, ''))
+            if not m:
+                fail('--size needs WIDTHxHEIGHT, e.g. 1920x1080')
+            a['width'], a['height'] = int(m.group(1)), int(m.group(2))
+        elif x == '--full':
+            a['full'] = True
+        elif x in ('--dark', '--light'):
+            a['scheme'] = x[2:]
+        elif x == '--sidebar':
+            a['sidebar'] = True
+        elif x == '--wait':
+            a['wait'] = max(0.0, float(next(it, '4')))
+        elif x == '--json':
+            a['json'] = True
+        elif x.startswith('-'):
+            fail(f'unknown option {x} (see --help)')
+        else:
+            a['path'] = x
+    return a
+
+
+def main():
+    a = parse(sys.argv[1:])
+    tok = token()
+    if not tok:
+        fail('no Home Assistant token. Ask the user to create a long-lived access token (their profile -> '
+             'Security -> Long-lived access tokens) and paste it in this app\'s Settings (gear icon, top right) '
+             'under "Full-access token". Until then check your work with ha-api / ha-ws instead.')
+    base = base_url()
+    slug = re.sub(r'[^a-z0-9]+', '-', a['path'].lower()).strip('-') or 'home'
+    out = a['out'] or f"/share/ai_agents_files/screenshot-{slug}-{time.strftime('%Y%m%d-%H%M%S')}.png"
+    try:
+        rep = asyncio.run(shoot(a, tok, base, out))
+    except SystemExit:
+        raise
+    except Exception as e:
+        fail(f'{type(e).__name__}: {e}')
+    rep['file'] = out
+    if a['json']:
+        print(json.dumps(rep, indent=2, ensure_ascii=False))
+    else:
+        print(f"saved {out}  (open it with your image reading tool and look at it; the user sees it in the Files tab)")
+        print(f"page  {rep.get('href', '')}  title: {rep.get('title', '')}")
+        if rep.get('login'):
+            print('PROBLEM the login page is shown: the token is not accepted (expired or wrong) or the address is wrong')
+        for e in rep.get('errors', []):
+            print('CARD ERROR ' + e)
+        for w in rep.get('warnings', []):
+            print('WARNING    ' + w)
+        for e in rep.get('console_errors', [])[:15]:
+            print('JS ERROR   ' + e)
+        if not (rep.get('errors') or rep.get('warnings') or rep.get('console_errors') or rep.get('login')):
+            print('no card errors, warnings or script errors found')
+    sys.exit(1 if rep.get('login') or rep.get('errors') else 0)
+
+
+if __name__ == '__main__':
+    main()

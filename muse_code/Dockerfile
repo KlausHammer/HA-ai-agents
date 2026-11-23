@@ -17,6 +17,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       python3 python3-websockets python3-yaml curl ca-certificates jq git bubblewrap \
       nano less ripgrep procps xz-utils unzip openssh-client \
+      chromium fonts-noto-core fonts-noto-color-emoji \
  && rm -rf /var/lib/apt/lists/*
 
 # Node.js (needed by Gemini CLI and Codex), checked against the official checksums

@@ -1,0 +1,65 @@
+name: AI Agents
+version: "0.3.0"
+slug: muse_code
+url: "https://github.com/KlausHammer/HA-ai-agents/tree/main/muse_code"
+image: "ghcr.io/klaushammer/ha-ai-agents"
+description: "Claude Code, Codex, Gemini CLI and Muse Code in a sidebar terminal, with full admin access to Home Assistant. By default the agents act without asking for confirmation."
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:robot-outline
+panel_title: AI Agents
+panel_admin: true
+homeassistant_api: true
+hassio_api: true
+hassio_role: admin
+map:
+  - type: homeassistant_config
+    read_only: false
+    path: /homeassistant
+  - type: share
+    read_only: false
+  - type: local_apps
+    read_only: false
+  - type: all_addon_configs
+    read_only: false
+  - type: ssl
+    read_only: false
+  - type: media
+    read_only: false
+  - type: backup
+    read_only: false
+options:
+  agents:
+    - muse
+    - claude
+    - gemini
+    - codex
+  muse_args: "--yolo"
+  claude_args: "--dangerously-skip-permissions --model sonnet"
+  gemini_args: "--yolo"
+  codex_args: "--dangerously-bypass-approvals-and-sandbox"
+  autocompact_tokens: 400000
+  idle_compact_minutes: 55
+  anthropic_api_key: ""
+  gemini_api_key: ""
+  openai_api_key: ""
+  meta_api_key: ""
+schema:
+  agents:
+    - "list(muse|claude|gemini|codex)"
+  muse_args: str?
+  claude_args: str?
+  gemini_args: str?
+  codex_args: str?
+  autocompact_tokens: int(0,2000000)
+  idle_compact_minutes: int(0,1440)
+  anthropic_api_key: password?
+  gemini_api_key: password?
+  openai_api_key: password?
+  meta_api_key: password?

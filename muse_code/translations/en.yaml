@@ -1,0 +1,34 @@
+configuration:
+  agents:
+    name: Agents
+    description: Which agent tabs to show in the panel.
+  muse_args:
+    name: Muse Code arguments
+    description: Command line arguments for Muse Code. The default --yolo lets it act without asking; remove it to get approval prompts.
+  claude_args:
+    name: Claude Code arguments
+    description: Command line arguments for Claude Code. The default --dangerously-skip-permissions lets it act without asking; remove it to get approval prompts.
+  gemini_args:
+    name: Gemini CLI arguments
+    description: Command line arguments for Gemini CLI. The default --yolo lets it act without asking; remove it to get approval prompts.
+  codex_args:
+    name: Codex arguments
+    description: Command line arguments for Codex. The default --dangerously-bypass-approvals-and-sandbox lets it act without asking; remove it to get approval prompts.
+  autocompact_tokens:
+    name: Auto-compact at (tokens)
+    description: Compact the conversation automatically when it reaches this many tokens, for all agents. 0 keeps each agent's own default. Takes effect when an agent starts.
+  idle_compact_minutes:
+    name: Compact when idle (minutes)
+    description: Compact a conversation after this many minutes without activity, while the prompt cache is still warm. 0 turns it off. Claude Code uses its own idle compaction (about an hour).
+  anthropic_api_key:
+    name: Anthropic API key
+    description: Optional. Leave empty to sign in with a Claude subscription in the terminal.
+  gemini_api_key:
+    name: Gemini API key
+    description: Optional. Leave empty to sign in with a Google account in the terminal.
+  openai_api_key:
+    name: OpenAI API key
+    description: Optional. Leave empty to sign in with ChatGPT in the terminal.
+  meta_api_key:
+    name: Meta API key
+    description: Optional. Leave empty to sign in with a Meta account in the terminal.

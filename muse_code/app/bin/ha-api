@@ -1,0 +1,20 @@
+#!/bin/bash
+# ha-api METHOD PATH [JSON]
+#   Paths starting with /api go to Home Assistant Core, everything else to the Supervisor.
+#   ha-api GET  /api/states/sun.sun
+#   ha-api POST /api/services/light/turn_on '{"entity_id":"light.kitchen"}'
+#   ha-api POST /api/config/core/check_config
+#   ha-api GET  /core/logs            (Core log as text; also /supervisor/logs, /addons/<slug>/logs)
+#   ha-api GET  /addons               (installed apps)
+set -euo pipefail
+m="${1:?usage: ha-api METHOD PATH [JSON]}"; p="${2:?usage: ha-api METHOD PATH [JSON]}"; shift 2
+tok="${SUPERVISOR_TOKEN}"
+case "$p" in
+  /api/*) if [ -n "${HA_USER_TOKEN:-}" ]; then url="${HA_DIRECT_URL}${p}"; tok="${HA_USER_TOKEN}"; else url="http://supervisor/core${p}"; fi ;;
+  *) url="http://supervisor${p}" ;;
+esac
+args=(-sS -X "$m" -H "Authorization: Bearer ${tok}" -H "Content-Type: application/json")
+if [ "${tok}" != "${SUPERVISOR_TOKEN}" ] && [ -n "${HA_DIRECT_INSECURE:-}" ]; then args+=(-k); fi
+if [ $# -gt 0 ]; then args+=(--data-binary "$1"); fi
+curl "${args[@]}" "$url"
+echo

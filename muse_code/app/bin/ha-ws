@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""ha-ws MESSAGE [MESSAGE ...]  -- send Home Assistant WebSocket commands and print the results as JSON.
+
+Each MESSAGE is a JSON object without "id" (use - to read one from stdin). Examples:
+  ha-ws '{"type":"config/entity_registry/list"}'
+  ha-ws '{"type":"config/device_registry/list"}' '{"type":"config/area_registry/list"}'
+  ha-ws '{"type":"lovelace/config","url_path":null}'          (the default dashboard)
+  ha-ws '{"type":"lovelace/dashboards/list"}'
+  ha-ws '{"type":"lovelace/resources"}'
+  cat new.json | ha-ws -                                      (e.g. lovelace/config/save)
+  ha-ws '{"type":"render_template","template":"{{ states(\"sun.sun\") }}"}'
+Exit code 1 if any command fails; the error is printed to stderr.
+"""
+import asyncio, json, os, ssl, sys
+
+try:
+    import websockets
+except ImportError:
+    sys.exit('python3-websockets is missing')
+
+
+async def main(msgs):
+    failed = False
+    out = []
+    token, url = os.environ['SUPERVISOR_TOKEN'], 'ws://supervisor/core/websocket'
+    if os.environ.get('HA_USER_TOKEN'):  # full-access token from the settings page
+        token, url = os.environ['HA_USER_TOKEN'], os.environ['HA_DIRECT_URL'].replace('http', 'ws', 1) + '/api/websocket'
+    extra = {}
+    if url.startswith('wss://') and os.environ.get('HA_DIRECT_INSECURE'):  # own certificate, internal host name
+        extra['ssl'] = ssl._create_unverified_context()
+    async with websockets.connect(url, max_size=None, **extra) as ws:
+        await ws.recv()
+        await ws.send(json.dumps({'type': 'auth', 'access_token': token}))
+        if json.loads(await ws.recv()).get('type') != 'auth_ok':
+            sys.exit('authentication failed')
+        for i, m in enumerate(msgs, 1):
+            m['id'] = i
+            await ws.send(json.dumps(m))
+            while True:
+                r = json.loads(await ws.recv())
+                if r.get('id') != i:
+                    continue
+                if r.get('type') == 'event':  # render_template and subscriptions answer with an event
+                    out.append(r.get('event'))
+                    break
+                if r.get('type') == 'result':
+                    if r.get('success'):
+                        if m['type'] == 'render_template':
+                            continue  # wait for the rendered event
+                        out.append(r.get('result'))
+                    else:
+                        failed = True
+                        print(json.dumps(r.get('error')), file=sys.stderr)
+                        out.append(None)
+                    break
+    print(json.dumps(out[0] if len(out) == 1 else out, indent=2, ensure_ascii=False))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help'):
+        print(__doc__)
+        sys.exit(0)
+    msgs = [json.loads(sys.stdin.read() if a == '-' else a) for a in sys.argv[1:]]
+    sys.exit(asyncio.run(main(msgs)))
